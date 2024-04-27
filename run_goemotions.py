@@ -145,17 +145,15 @@ def train(args,
 
     return global_step, tr_loss / global_step
 
+global_logits = None
 
 def evaluate(args, model, eval_dataset, mode, global_step=None):
+    global global_logits  # 全局变量
     results = {}
     eval_sampler = SequentialSampler(eval_dataset)
     eval_dataloader = DataLoader(eval_dataset, sampler=eval_sampler, batch_size=args.eval_batch_size)
 
-    # Eval!
-    if global_step != None:
-        logger.info("***** Running evaluation on {} dataset ({} step) *****".format(mode, global_step))
-    else:
-        logger.info("***** Running evaluation on {} dataset *****".format(mode))
+    logger.info("***** Running evaluation on {} dataset *****".format(mode))
     logger.info("  Num examples = {}".format(len(eval_dataset)))
     logger.info("  Eval Batch size = {}".format(args.eval_batch_size))
     eval_loss = 0.0
@@ -178,21 +176,35 @@ def evaluate(args, model, eval_dataset, mode, global_step=None):
             tmp_eval_loss, logits = outputs[:2]
 
             eval_loss += tmp_eval_loss.mean().item()
-        nb_eval_steps += 1
-        if preds is None:
-            preds = 1 / (1 + np.exp(-logits.detach().cpu().numpy()))  # Sigmoid
-            out_label_ids = inputs["labels"].detach().cpu().numpy()
-        else:
-            preds = np.append(preds, 1 / (1 + np.exp(-logits.detach().cpu().numpy())), axis=0)  # Sigmoid
-            out_label_ids = np.append(out_label_ids, inputs["labels"].detach().cpu().numpy(), axis=0)
+            nb_eval_steps += 1
+
+            # 处理logits：应用Sigmoid
+            sigmoid_logits = torch.sigmoid(logits)  # Sigmoid处理
+
+            # 累积sigmoid处理后的logits
+            if global_logits is None:
+                global_logits = sigmoid_logits.detach().cpu().numpy()
+            else:
+                global_logits = np.append(global_logits, sigmoid_logits.detach().cpu().numpy(), axis=0)
+
+            # 累积preds
+            if preds is None:
+                preds = sigmoid_logits.detach().cpu().numpy()  # Sigmoid后的preds
+                out_label_ids = inputs["labels"].detach().cpu().numpy()
+            else:
+                preds = np.append(preds, sigmoid_logits.detach().cpu().numpy(), axis=0)
+                out_label_ids = np.append(out_label_ids, inputs["labels"].detach().cpu().numpy(), axis=0)
 
     eval_loss = eval_loss / nb_eval_steps
     results = {
         "loss": eval_loss
     }
+
     preds[preds > args.threshold] = 1
     preds[preds <= args.threshold] = 0
-    result = compute_metrics(out_label_ids, preds)
+
+    # 使用sigmoid处理后的logits计算指标
+    result = compute_metrics(out_label_ids, preds, global_logits)
     results.update(result)
 
     output_dir = os.path.join(args.output_dir, mode)
@@ -201,13 +213,14 @@ def evaluate(args, model, eval_dataset, mode, global_step=None):
 
     output_eval_file = os.path.join(output_dir, "{}-{}.txt".format(mode, global_step) if global_step else "{}.txt".format(mode))
     with open(output_eval_file, "w") as f_w:
-        logger.info("***** Eval results on {} dataset *****".format(mode))
         for key in sorted(results.keys()):
             logger.info("  {} = {}".format(key, str(results[key])))
             f_w.write("  {} = {}\n".format(key, str(results[key])))
 
-    return results
+    # 清零global_logits
+    global_logits = None
 
+    return results
 
 def main(cli_args):
     # Read from config file and make args
