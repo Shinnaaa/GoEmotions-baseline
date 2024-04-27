@@ -8,7 +8,6 @@ from torch.utils.data import TensorDataset
 
 logger = logging.getLogger(__name__)
 
-
 class InputExample(object):
     """ A single training/test example for simple sequence classification. """
 
