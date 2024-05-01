@@ -31,10 +31,8 @@ def emd_compute(labels, logits):
     logits_tensor = torch.tensor(logits, dtype=torch.float32)
     batch_size = logits_tensor.size(0)
 
-    # 确保预测和真实标签的和相等
     for i in range(batch_size):
         if torch.sum(labels_tensor[i]) != torch.sum(logits_tensor[i]):
-            # 使用L1范数归一化
             labels_sum = torch.sum(labels_tensor[i])
             logits_sum = torch.sum(logits_tensor[i])
 
@@ -45,7 +43,6 @@ def emd_compute(labels, logits):
                 labels_tensor[i] = torch.zeros_like(labels_tensor[i])
                 logits_tensor[i] = torch.zeros_like(logits_tensor[i])
 
-    # 计算EMD
     for i in range(batch_size):
         single_logit = logits_tensor[i]
         single_label = labels_tensor[i]
@@ -54,11 +51,10 @@ def emd_compute(labels, logits):
             emd = ot.emd2(single_logit, single_label, M_tensor)
             total_emd += emd
 
-    final_emd = total_emd / batch_size  # 计算平均损失
+    final_emd = total_emd / batch_size  
     return final_emd
 
 
-# 指标计算函数
 def compute_metrics(labels, preds, logits=None):
     assert logits is not None, "Logits must be provided for EMD calculation"
     assert len(preds) == len(labels), "Preds and labels must have the same length"
@@ -77,7 +73,6 @@ def compute_metrics(labels, preds, logits=None):
         labels, preds, average="weighted", zero_division=0)
     results["hamming_loss"] = hamming_loss(labels, preds)
 
-    # 使用logits计算EMD
     results["emd"] = emd_compute(labels, logits)
 
     return results
